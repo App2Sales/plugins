@@ -168,7 +168,7 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
   /// null. The [package] argument must be non-null when the asset comes from a
   /// package and null otherwise.
   VideoPlayerController.asset(this.dataSource,
-      {this.package, this.closedCaptionFile})
+      {this.package, this.closedCaptionFile, this.useDefaultLifeCycleObserver = true})
       : dataSourceType = DataSourceType.asset,
         formatHint = null,
         super(VideoPlayerValue(duration: null));
@@ -181,16 +181,18 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
   /// **Android only**: The [formatHint] option allows the caller to override
   /// the video format detection code.
   VideoPlayerController.network(this.dataSource,
-      {this.formatHint, this.closedCaptionFile})
+      {this.formatHint, this.closedCaptionFile, this.useDefaultLifeCycleObserver = true,})
       : dataSourceType = DataSourceType.network,
         package = null,
-        super(VideoPlayerValue(duration: null));
+        super(VideoPlayerValue(duration: null)) {
+          print('Creating our custom controller');
+        }
 
   /// Constructs a [VideoPlayerController] playing a video from a file.
   ///
   /// This will load the file from the file-URI given by:
   /// `'file://${file.path}'`.
-  VideoPlayerController.file(File file, {this.closedCaptionFile})
+  VideoPlayerController.file(File file, {this.closedCaptionFile, this.useDefaultLifeCycleObserver = true})
       : dataSource = 'file://${file.path}',
         dataSourceType = DataSourceType.file,
         package = null,
@@ -221,6 +223,36 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
   /// [initialize()] is called.
   final Future<ClosedCaptionFile> closedCaptionFile;
 
+  /// Optional field to specify if the view should implement
+  /// the default behavior under the app life cycle state changes.
+  /// The default behavior pauses the video playback if state is AppLifecycleState.paused
+  /// and resume the plyaback if needed when state is AppLifecycleState.paused.
+  /// The default [useDefaultLifeCycleObserver] value is true.
+  /// 
+  /// If you set [useDefaultLifeCycleObserver] as false you can handle the playback
+  /// over AppLifecycleState changes. The default implementation looks like:
+  /// 
+  /// 
+  ///     @override
+  ///     void didChangeAppLifecycleState(AppLifecycleState state) {
+  ///       switch (state) {
+  ///         case AppLifecycleState.paused:
+  ///           _wasPlayingBeforePause = _controller.value.isPlaying;
+  ///           _controller.pause();
+  ///           break;
+  /// 
+  ///         case AppLifecycleState.resumed:
+  ///           if (_wasPlayingBeforePause)
+  ///             _controller.play();
+  ///            break;
+  /// 
+  ///         default:
+  ///           break;      
+  ///         }
+  ///       }
+  /// 
+  final bool useDefaultLifeCycleObserver;
+
   ClosedCaptionFile _closedCaptionFile;
   Timer _timer;
   bool _isDisposed = false;
@@ -235,8 +267,11 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
 
   /// Attempts to open the given [dataSource] and load metadata about the video.
   Future<void> initialize() async {
-    _lifeCycleObserver = _VideoAppLifeCycleObserver(this);
-    _lifeCycleObserver.initialize();
+    if (useDefaultLifeCycleObserver){
+      _lifeCycleObserver = _VideoAppLifeCycleObserver(this);
+      _lifeCycleObserver.initialize();
+    }
+    
     _creatingCompleter = Completer<void>();
 
     DataSource dataSourceDescription;
@@ -332,7 +367,9 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
         await _eventSubscription?.cancel();
         await _videoPlayerPlatform.dispose(_textureId);
       }
-      _lifeCycleObserver.dispose();
+      
+      if (useDefaultLifeCycleObserver)
+        _lifeCycleObserver.dispose();
     }
     _isDisposed = true;
     super.dispose();
